@@ -1,0 +1,10 @@
+*.o
+*.a
+*.d
+*.log
+*.history
+*.bak
+*.temp
+*.pyc
+*.un~
+__pycache__/*
