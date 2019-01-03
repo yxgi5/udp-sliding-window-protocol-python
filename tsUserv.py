@@ -1,4 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 from socket import *
 from time import ctime
@@ -12,9 +13,9 @@ udpSerSock = socket(AF_INET, SOCK_DGRAM)
 udpSerSock.bind(ADDR)
 
 while True:
-    print 'waiting for message...'
+    print('waiting for message...')
     data, addr = udpSerSock.recvfrom(BUFSIZ)
-    udpSerSock.sendto('[%s] %s' % (ctime(), data), addr)
-    print data, 'received from and returned to:', addr
+    udpSerSock.sendto(('[%s] %s' % (ctime(), data.decode())).encode(), addr)
+    print(data.decode(), 'received from and returned to:', addr)
 
 udpSerSock.close()

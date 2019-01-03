@@ -1,4 +1,5 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 from socket import *
 
@@ -10,13 +11,13 @@ ADDR = (HOST, PORT)
 udpCliSock = socket(AF_INET, SOCK_DGRAM)
 
 while True:
-    data = raw_input('> ')
+    data = input('> ')
     if not data:
         break
-    udpCliSock.sendto(data, ADDR)
+    udpCliSock.sendto(data.encode(), ADDR)
     data, ADDR = udpCliSock.recvfrom(BUFSIZ)
     if not data:
         break
-    print data
+    print(data.decode())
 
 udpCliSock.close()
