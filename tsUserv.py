@@ -5,8 +5,9 @@ import swp
 from time import ctime
 
 
-TGT_HOST = '127.0.0.1'
+#TGT_HOST = '127.0.0.1'
 #TGT_HOST = '192.168.0.102'
+TGT_HOST = '192.168.1.112'
 '''
 pc:192.168.0.102
 pi:192.168.0.103 ##
