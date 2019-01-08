@@ -132,6 +132,7 @@ def main(usr_argvs):
         if (read_done is True):
            break
         buffer_num=buffer_num+1
+        print(buffer_num)
     file.close()
     
     print("[SENT %ld BYTES]"% (buffer_num * max_buffer_size + buffer_size) );

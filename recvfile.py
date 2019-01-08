@@ -164,6 +164,7 @@ def main(usr_argvs):
         if (recv_done is True):
            break
         buffer_num=buffer_num+1
+        print('#%d'%buffer_num)
     print("[RECEIVED %ld BYTES]"% (buffer_num * max_buffer_size + len(buffer)) );
     print("All done :)");
 

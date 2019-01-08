@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import time
+import datetime
 import socket
 import struct
 from threading import Thread, Lock
@@ -10,7 +11,7 @@ from threading import Thread, Lock
 MAX_DATA_SIZE =1024
 MAX_FRAME_SIZE= 1034
 ACK_SIZE= 6
-TIMEOUT = 20
+TIMEOUT = 100
 
 def create_ack(seq_num, error):
     ack = []
@@ -58,7 +59,8 @@ def create_frame(seq_num, frame, data, data_size, eot):
 
 def elapsed_time_ms(current_time, start_time):
     k=current_time-start_time
-    return k*1000000
+    return k.seconds*1000+round(k.microseconds/1000)
+    pass
 
 def checksum(frame, count):
     sum = 0
@@ -150,7 +152,20 @@ class Receiver:
                 #continue
             frame_error, recv_seq_num, data, data_size, eot = read_frame(frame)
             ack = create_ack(recv_seq_num, frame_error)
-            self.udpSock.sendto(ack, client_addr)
+            #print("%d, %d, %d"%(recv_seq_num,self.lfr,self.laf))
+            #self.udpSock.sendto(ack, client_addr)
+            tmp=True
+            for i in range(window_len):
+                if (self.window_recv_mask[i]==False):
+                    tmp=False
+                    break
+                else:
+                    tmp=tmp and self.window_recv_mask[i]
+            if(tmp==True):
+                self.lfr = self.lfr +window_len
+                self.laf = self.lfr + window_len
+                print('#')
+               
             if (recv_seq_num <= self.laf):
                 if (frame_error == False):
                     buffer_shift = recv_seq_num * MAX_DATA_SIZE
@@ -176,8 +191,15 @@ class Receiver:
                         self.recv_seq_count = recv_seq_num + 1
                         pass
                 pass
-            pass
+            elif(self.lfr==-1):
+                pass
+            else:
+                print(self.window_recv_mask)
+                raise Exception("Recv  err")
+            self.udpSock.sendto(ack, client_addr)
             if (self.lfr >= self.recv_seq_count - 1):
+                #self.buffer_num=self.buffer_num+1
+                #print(self.buffer_num)
                 break
         return eot, self.buffer[0:self.buffer_size]
         
@@ -200,6 +222,7 @@ class Transmitter:
         self.lc_addr = (lc_host, lc_port)
         self.udpSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udpSock.bind(self.lc_addr)
+        self.mutex = Lock()
         
         # 最后一个buffer?
         self.read_done = read_done
@@ -218,7 +241,7 @@ class Transmitter:
         self.window_sent_mask=[False] * window_len
         
         # 记录发送的时间，用于超时计算
-        self.window_sent_time=[time.perf_counter()]*window_len
+        self.window_sent_time=[datetime.datetime.now()]*window_len
         
         # frame包，包括了eot，包序列号，data
         self.frame = bytearray(MAX_FRAME_SIZE)
@@ -256,7 +279,7 @@ class Transmitter:
             Function that keep sending data to the receiver;
             It's executed on a separated thread.
         '''
-        #self.mutex.acquire()
+        self.mutex.acquire()
         
         self.seq_count=int(self.buffer_size//MAX_DATA_SIZE+(0 if (self.buffer_size % MAX_DATA_SIZE) == 0 else 1))
         
@@ -272,11 +295,11 @@ class Transmitter:
         # 窗口末尾包的下标
         self.lfs = self.lar + self.window_len
             
-        #self.mutex.release()
+        self.mutex.release()
             
         self.send_done = False
         while (self.send_done is False):
-            #self.mutex.acquire()
+            self.mutex.acquire()
             
             #如果窗口的第一个包收到了ACK
             if (self.window_ack_mask[0] is True):
@@ -301,13 +324,13 @@ class Transmitter:
                 self.lar=self.lar+shift
                 self.lfs = self.lar + self.window_len
             
-            #self.mutex.release()
+            self.mutex.release()
             
             for i in range(self.window_len):
                 self.seq_num = self.lar + i + 1
                 if (self.seq_num < self.seq_count):
-                        #self.mutex.acquire()
-                        if((self.window_sent_mask[i] is False) or ((self.window_ack_mask[i] is False) and (elapsed_time_ms(time.perf_counter(), self.window_sent_time[i])>TIMEOUT))):
+                        self.mutex.acquire()
+                        if((self.window_sent_mask[i] is False) or ((self.window_ack_mask[i] is False) and (elapsed_time_ms(datetime.datetime.now(), self.window_sent_time[i])>TIMEOUT))):
                             # 当前包 在buffer中的偏移量
                             buffer_shift = self.seq_num * MAX_DATA_SIZE
                             data_size = (self.buffer_size - buffer_shift) if (self.buffer_size - buffer_shift < MAX_DATA_SIZE) else MAX_DATA_SIZE
@@ -317,8 +340,8 @@ class Transmitter:
                             frame_size = create_frame(self.seq_num, self.frame, self.data, data_size, eot)
                             self.udpSock.sendto(self.frame[0:frame_size], self.tgt_addr)
                             self.window_sent_mask[i] =True
-                            self.window_sent_time[i] = time.perf_counter()
-                        #self.mutex.release()
+                            self.window_sent_time[i] = datetime.datetime.now()
+                        self.mutex.release()
                 if (self.lar >= self.seq_count - 1):
                     self.send_done = True
         pass
@@ -341,13 +364,13 @@ class Transmitter:
         
             ack_error, ack_neg, ack_seq_num = read_ack(ack)
             
-            #self.mutex.acquire()
+            self.mutex.acquire()
             if ((ack_error is False) and (ack_seq_num > self.lar) and (ack_seq_num <= self.lfs)):
                 if (ack_neg is False):
                     self.window_ack_mask[ack_seq_num - (self.lar + 1)] = True
-                #else:
-                    #self.window_sent_time[ack_seq_num - (self.lar + 1)]=time.perf_counter()
-            #self.mutex.release()
+                else:
+                    self.window_sent_time[ack_seq_num - (self.lar + 1)]=datetime.datetime.now()
+            self.mutex.release()
             
     def close(self):
         self.udpSock.close()
