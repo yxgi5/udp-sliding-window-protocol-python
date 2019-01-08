@@ -132,11 +132,8 @@ class Receiver:
         self.udpSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udpSock.bind(self.lc_addr)
     
-    def recv(self, remote_host, remote_port, window_len, recv_buffer_size):
-        #data, addr=self.udpSock.recvfrom(MAX_FRAME_SIZE)
-        #return data, addr
-        
-        self.remote_addr=(remote_host, remote_port)
+    def recv(self, window_len, recv_buffer_size):        
+        #self.remote_addr=(remote_host, remote_port)
         self.max_buffer_size = MAX_DATA_SIZE*recv_buffer_size
         self.window_len = window_len
 
@@ -149,11 +146,11 @@ class Receiver:
         
         while(True):
             frame, client_addr = self.udpSock.recvfrom(MAX_FRAME_SIZE)
-            if(client_addr != self.remote_addr):
-                continue
+            #if(client_addr != self.remote_addr):
+                #continue
             frame_error, recv_seq_num, data, data_size, eot = read_frame(frame)
             ack = create_ack(recv_seq_num, frame_error)
-            self.udpRCVSock.sendto(ack, client_addr)
+            self.udpSock.sendto(ack, client_addr)
             if (recv_seq_num <= self.laf):
                 if (frame_error == False):
                     buffer_shift = recv_seq_num * MAX_DATA_SIZE
@@ -191,20 +188,25 @@ class Transmitter:
     '''
         This class represents the transmitter.
     '''  
-    def __init__(self, lc_host, lc_port):
+    #def __init__(self):
         
+        #self.lc_addr = (lc_host, lc_port)
+        #self.udpSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        #self.udpSock.bind(self.lc_addr)
+        #self.mutex = Lock()
+        #pass
+
+    def __init__(self, lc_host, lc_port, send_data, tgt_host, tgt_port, window_len, read_done):
         self.lc_addr = (lc_host, lc_port)
         self.udpSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udpSock.bind(self.lc_addr)
-        self.mutex = Lock()
+        
+        # 最后一个buffer?
+        self.read_done = read_done
 
-    def send(self, send_data, tgt_host, tgt_port, window_len, send_buffer_size):
-        
         # 本次发送的数据
-        self.send_data=send_data
-        
-        # send_data超过这个大小，包序号重新编号
-        self.max_buffer_size = MAX_DATA_SIZE*send_buffer_size
+        self.buffer=send_data
+        self.buffer_size = len(self.buffer)
 
         #窗口大小
         self.window_len = window_len
@@ -239,57 +241,47 @@ class Transmitter:
         recv_ack_thread.start()
         
         send_data_thread.join()
-        recv_ack_thread.join()
         
-    def send_thread(self):
+        try:
+            self.udpSock.shutdown(socket.SHUT_RDWR)
+        except OSError as ret:
+            #print(ret)
+            pass
+            
+        recv_ack_thread.join()
+        self.close()
+        
+    def send_data_thread(self):
         '''
             Function that keep sending data to the receiver;
             It's executed on a separated thread.
         '''
-        self.read_done = False
-        self.buffer_num = 0
-        while (self.read_done is False):
-            
-            self.send_data_size=len(self.send_data)
-            if(self.send_data_size>self.max_buffer_size):
-                self.buffer=self.send_data[0:self.max_buffer_size]
-                self.send_data=self.send_data[self.max_buffer_size, -1]
-            else:
-                self.buffer=self.send_data[0:self.send_data_size]
-                self.read_done = True
-                
-            self.buffer_size = len(self.buffer)
-            
-            self.seq_count=int(self.buffer_size//MAX_DATA_SIZE+(0 if (self.buffer_size % MAX_DATA_SIZE) == 0 else 1))
-            
-            self.mutex.acquire()
-            '''
-            for i in range(self.window_len):
-                self.window_ack_mask[i] = False
-                self.window_sent_mask[i] = False
-            '''
-            # 用于存储窗口包是否收到ACK
-            self.window_ack_mask=[False] * self.window_len
+        #self.mutex.acquire()
         
-            # 用于存储窗口包是否已经发送过
-            self.window_sent_mask=[False] * self.window_len
-            
-            # 一个大buffer中，窗口前一包的下标, 初始化为-1
-            self.lar = -1
+        self.seq_count=int(self.buffer_size//MAX_DATA_SIZE+(0 if (self.buffer_size % MAX_DATA_SIZE) == 0 else 1))
         
-            # 窗口末尾包的下标
-            self.lfs = self.lar + self.window_len
+        # 用于存储窗口包是否收到ACK
+        self.window_ack_mask=[False] * self.window_len
+        
+        # 用于存储窗口包是否已经发送过
+        self.window_sent_mask=[False] * self.window_len
+        
+        # 一个大buffer中，窗口前一包的下标, 初始化为-1
+        self.lar = -1
+        
+        # 窗口末尾包的下标
+        self.lfs = self.lar + self.window_len
             
-            self.mutex.release()
+        #self.mutex.release()
             
-            self.send_done = False
-            while (self.send_done is False):
-                self.mutex.acquire()
+        self.send_done = False
+        while (self.send_done is False):
+            #self.mutex.acquire()
+            
+            #如果窗口的第一个包收到了ACK
+            if (self.window_ack_mask[0] is True):
+                shift = 1 #// 偏移一个包
                 
-                #如果窗口的第一个包收到了ACK
-                if (self.window_ack_mask[0] is True):
-                    shift = 1 #// 偏移一个包
-                    
                 #找到窗口里第一个没有收到ACK的包
                 for i in range(1, self.window_len):
                     if (self.window_ack_mask[i] is False):
@@ -308,31 +300,28 @@ class Transmitter:
                     self.window_ack_mask[i] = False
                 self.lar=self.lar+shift
                 self.lfs = self.lar + self.window_len
-                
-                self.mutex.release()
-                
-                for i in range(self.window_len):
-                    self.seq_num = self.lar + i + 1
-                    if (self.seq_num < self.seq_count):
-                        self.mutex.acquire()
+            
+            #self.mutex.release()
+            
+            for i in range(self.window_len):
+                self.seq_num = self.lar + i + 1
+                if (self.seq_num < self.seq_count):
+                        #self.mutex.acquire()
                         if((self.window_sent_mask[i] is False) or ((self.window_ack_mask[i] is False) and (elapsed_time_ms(time.perf_counter(), self.window_sent_time[i])>TIMEOUT))):
                             # 当前包 在buffer中的偏移量
                             buffer_shift = self.seq_num * MAX_DATA_SIZE
                             data_size = (self.buffer_size - buffer_shift) if (self.buffer_size - buffer_shift < MAX_DATA_SIZE) else MAX_DATA_SIZE
                             self.data[0:data_size]=self.buffer[buffer_shift:buffer_shift+data_size]
+                            #最后一个buffer的最后一包才置位eot
                             eot = (self.seq_num == (self.seq_count - 1)) and (self.read_done)
                             frame_size = create_frame(self.seq_num, self.frame, self.data, data_size, eot)
                             self.udpSock.sendto(self.frame[0:frame_size], self.tgt_addr)
                             self.window_sent_mask[i] =True
                             self.window_sent_time[i] = time.perf_counter()
-                        self.mutex.release()
+                        #self.mutex.release()
                 if (self.lar >= self.seq_count - 1):
                     self.send_done = True
-                    
-            self.buffer_num=self.buffer_num+1
-            if (self.read_done is True):
-                break
-
+        pass
     
     def recv_ack_thread(self):
         '''
@@ -352,13 +341,13 @@ class Transmitter:
         
             ack_error, ack_neg, ack_seq_num = read_ack(ack)
             
-            self.mutex.acquire()
+            #self.mutex.acquire()
             if ((ack_error is False) and (ack_seq_num > self.lar) and (ack_seq_num <= self.lfs)):
                 if (ack_neg is False):
                     self.window_ack_mask[ack_seq_num - (self.lar + 1)] = True
-                else:
-                    self.window_sent_time[ack_seq_num - (self.lar + 1)]=time.perf_counter()
-            self.mutex.release()
+                #else:
+                    #self.window_sent_time[ack_seq_num - (self.lar + 1)]=time.perf_counter()
+            #self.mutex.release()
             
     def close(self):
         self.udpSock.close()
