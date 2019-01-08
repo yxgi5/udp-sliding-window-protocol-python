@@ -11,7 +11,7 @@ from threading import Thread, Lock
 MAX_DATA_SIZE =1024
 MAX_FRAME_SIZE= 1034
 ACK_SIZE= 6
-TIMEOUT = 100
+TIMEOUT = 20
 
 def create_ack(seq_num, error):
     ack = []
@@ -164,13 +164,15 @@ class Receiver:
             if(tmp==True):
                 self.lfr = self.lfr +window_len
                 self.laf = self.lfr + window_len
-                print('#')
+                self.window_recv_mask = [False] * self.window_len
+                print('*')
                
             if (recv_seq_num <= self.laf):
                 if (frame_error == False):
                     buffer_shift = recv_seq_num * MAX_DATA_SIZE
                     if (recv_seq_num == self.lfr + 1):
                         self.buffer[buffer_shift:buffer_shift+data_size]=data[0:data_size]
+                        #print(recv_seq_num,self.lfr,self.laf,self.window_recv_mask)
                         shift = 1
                         for i in range(window_len):
                             if (self.window_recv_mask[i]==False):
@@ -185,6 +187,7 @@ class Receiver:
                     elif(recv_seq_num > self.lfr + 1):
                         if (self.window_recv_mask[recv_seq_num - (self.lfr + 1)] == False):
                             self.buffer[buffer_shift:buffer_shift+data_size]=data[0:data_size]
+                            #print(recv_seq_num,self.lfr,self.laf,self.window_recv_mask)
                             self.window_recv_mask[recv_seq_num - (self.lfr + 1)] = True # here
                     if (eot==True):
                         self.buffer_size = buffer_shift + data_size
