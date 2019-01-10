@@ -11,7 +11,7 @@ from threading import Thread, Lock
 MAX_DATA_SIZE =1024
 MAX_FRAME_SIZE= 1034
 ACK_SIZE= 6
-TIMEOUT = 20
+TIMEOUT = 100
 
 def create_ack(seq_num, error):
     ack = []
@@ -302,7 +302,7 @@ class Transmitter:
             
         self.send_done = False
         while (self.send_done is False):
-            self.mutex.acquire()
+            #self.mutex.acquire()
             
             #如果窗口的第一个包收到了ACK
             if (self.window_ack_mask[0] is True):
@@ -327,12 +327,12 @@ class Transmitter:
                 self.lar=self.lar+shift
                 self.lfs = self.lar + self.window_len
             
-            self.mutex.release()
+            #self.mutex.release()
             
             for i in range(self.window_len):
                 self.seq_num = self.lar + i + 1
                 if (self.seq_num < self.seq_count):
-                        self.mutex.acquire()
+                        #self.mutex.acquire()
                         if((self.window_sent_mask[i] is False) or ((self.window_ack_mask[i] is False) and (elapsed_time_ms(datetime.datetime.now(), self.window_sent_time[i])>TIMEOUT))):
                             # 当前包 在buffer中的偏移量
                             buffer_shift = self.seq_num * MAX_DATA_SIZE
@@ -344,7 +344,7 @@ class Transmitter:
                             self.udpSock.sendto(self.frame[0:frame_size], self.tgt_addr)
                             self.window_sent_mask[i] =True
                             self.window_sent_time[i] = datetime.datetime.now()
-                        self.mutex.release()
+                        #self.mutex.release()
                 if (self.lar >= self.seq_count - 1):
                     self.send_done = True
         pass
@@ -371,8 +371,8 @@ class Transmitter:
             if ((ack_error is False) and (ack_seq_num > self.lar) and (ack_seq_num <= self.lfs)):
                 if (ack_neg is False):
                     self.window_ack_mask[ack_seq_num - (self.lar + 1)] = True
-                else:
-                    self.window_sent_time[ack_seq_num - (self.lar + 1)]=datetime.datetime.now()
+                #else:
+                    #self.window_sent_time[ack_seq_num - (self.lar + 1)]=datetime.datetime.now()
             self.mutex.release()
             
     def close(self):
